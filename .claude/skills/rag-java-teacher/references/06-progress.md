@@ -11,12 +11,12 @@ Update this file as you complete tasks. Tell Claude "我完成了[X]" to mark it
 - [x] `application.yml` configured (DashScope API key, Milvus host/port)
 - [x] Milvus running (`docker compose up -d`)
 - [x] Milvus Attu UI accessible at localhost:8000
-- [ ] PDF upload endpoint working (`/documents/upload`)
-- [ ] `/chat` endpoint with `QuestionAnswerAdvisor` working
-- [ ] `/chat/stream` SSE endpoint working
-- [ ] First successful Q&A demo (upload PDF → ask → get answer)
+- [x] PDF upload endpoint working (`/documents/upload`)
+- [x] `/chat` endpoint with RAG tool working (ReactAgent + VectorStore tool)
+- [x] `/chat/stream` SSE endpoint working
+- [x] First successful Q&A demo (upload PDF → ask → get answer)
 
-**Phase 1 done**: [ ]
+**Phase 1 done**: [x]
 
 ---
 
