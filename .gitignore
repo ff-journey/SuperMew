@@ -11,7 +11,7 @@ wheels/
 .env    
 
 #docker files
-volumes/
+volumes/1
 
 # OS files
 .DS_Store
