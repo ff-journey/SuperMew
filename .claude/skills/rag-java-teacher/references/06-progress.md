@@ -22,18 +22,18 @@ Update this file as you complete tasks. Tell Claude "我完成了[X]" to mark it
 
 ## Phase 2: Hybrid Search (Day 3-5)
 
-- [ ] Read `02-knowledge-points.md` BM25 + RRF sections
-- [ ] HanLP or jieba4j tokenizer added to project
-- [ ] `BM25Indexer` class implemented
-- [ ] `BM25Service.search()` working
-- [ ] `RRFMerger` implemented
-- [ ] `HybridRetriever` combining dense + BM25 working
-- [ ] Upload endpoint indexes to both Milvus and BM25Service
-- [ ] `HybridRagAdvisor` replacing `QuestionAnswerAdvisor`
+- [x] Read `02-knowledge-points.md` BM25 + RRF sections
+- [x] HanLP or jieba4j tokenizer added to project
+- [x] `BM25Indexer` class implemented
+- [x] `BM25Service.search()` working
+- [x] `RRFMerger` implemented
+- [x] `HybridRetriever` combining dense + BM25 working
+- [x] Upload endpoint indexes to both Milvus and BM25Service
+- [x] `HybridRagAdvisor` replacing `QuestionAnswerAdvisor`
 - [ ] chunk_level filter applied (only L3 leaves)
-- [ ] Compared dense-only vs hybrid recall — hybrid wins on keyword queries
+- [x] Compared dense-only vs hybrid recall — hybrid wins on keyword queries
 
-**Phase 2 done**: [ ]
+**Phase 2 done**: [x]
 
 ---
 
