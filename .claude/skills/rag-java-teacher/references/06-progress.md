@@ -30,7 +30,7 @@ Update this file as you complete tasks. Tell Claude "我完成了[X]" to mark it
 - [x] `HybridRetriever` combining dense + BM25 working
 - [x] Upload endpoint indexes to both Milvus and BM25Service
 - [x] `HybridRagAdvisor` replacing `QuestionAnswerAdvisor`
-- [ ] chunk_level filter applied (only L3 leaves)
+- [x] chunk_level filter applied (only L3 leaves)
 - [x] Compared dense-only vs hybrid recall — hybrid wins on keyword queries
 
 **Phase 2 done**: [x]
@@ -39,18 +39,20 @@ Update this file as you complete tasks. Tell Claude "我完成了[X]" to mark it
 
 ## Phase 3: Advanced Features (Day 6-8)
 
-- [ ] Read `02-knowledge-points.md` Hierarchical Chunking section
-- [ ] `HierarchicalDocumentSplitter` implemented (L1/L2/L3)
-- [ ] Upload endpoint uses hierarchical splitter
-- [ ] L3 chunks stored in Milvus
-- [ ] L1/L2 chunks stored in `ParentChunkStore` (JSON-backed)
-- [ ] Auto-merge logic implemented in `HybridRetriever`
-- [ ] Auto-merge verified: long doc → multiple leaf hits → parent chunk returned
-- [ ] (Optional) `GradingService` implemented (binary relevance)
-- [ ] (Optional) `QueryRewriter` implemented (step-back + HyDE)
-- [ ] (Optional) Grade → rewrite → re-retrieve pipeline wired up
+- [x] Read `02-knowledge-points.md` Hierarchical Chunking section
+- [x] `HierarchicalDocumentSplitter` implemented (L1/L2/L3)
+- [x] Upload endpoint uses hierarchical splitter
+- [x] L3 chunks stored in Milvus
+- [x] L1/L2 chunks stored in `ParentChunkStore` (JSON-backed)
+- [x] Auto-merge logic implemented in `HybridRetriever`
+- [x] Auto-merge verified: long doc → multiple leaf hits → parent chunk returned
+- [x] `RerankService` implemented (Jina reranker-v2-base-multilingual)
+- [x] Rerank inserted between RRF and auto-merge
+- [x] (Optional) `GradingService` implemented (binary relevance, parallelStream)
+- [x] (Optional) `QueryRewriter` implemented (step-back + HyDE)
+- [x] (Optional) Grade → rewrite → re-retrieve pipeline wired up
 
-**Phase 3 done**: [ ]
+**Phase 3 done**: [x]
 
 ---
 

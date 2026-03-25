@@ -183,65 +183,144 @@ SearchResultsWrapper results = milvusClient.hybridSearch(param);
 ### Theory
 - Short chunks → better retrieval precision (each chunk = focused topic)
 - Long chunks → more context for generation (don't cut mid-thought)
-- **Hierarchy**: L1 (1200 tokens) → L2 (600 tokens) → L3 (300 tokens, leaf)
+- **Hierarchy**: L1 (chapter) → L2 (paragraph) → L3 (sentence group, leaf)
 - Only L3 goes into Milvus. L1/L2 stored in `ParentChunkStore`
 
 ### Auto-merge Logic
 ```
-If ≥ threshold (e.g., 2) L3 siblings share the same L2 parent:
-    Replace all those L3 chunks with their L2 parent
-    Repeat: if ≥ threshold L2 siblings share L1 parent → replace with L1
+Two-pass iterative merge:
+Pass 1: L3→L2: if ≥ threshold L3 siblings share same L2 parent → replace with L2
+Pass 2: L2→L1: if ≥ threshold L2 siblings share same L1 parent → replace with L1
+Finally: deduplicate by chunk_id
 ```
 Result: short chunk retrieval precision + longer context when multiple chunks agree
 
-### Java: HierarchicalDocumentSplitter
+---
+
+### ⚡ 设计演进（亮点，面试必讲）
+
+**原始设计（照搬平铺分块经验）**
+```
+L1=1200字, L2=600字, L3=300字
+overlap: L1=200, L2=100, L3=50 (overlap/size = 16.7%)
+层级比例: 2x (每个L2只有2~3个L3子块)
+```
+
+**暴露的问题**
+
+| 问题 | 根因 |
+|---|---|
+| threshold=2 几乎总触发 | 2x比例 → 每个L2只有2块L3 → 命中2/2=100%就升级，门槛形同虚设 |
+| overlap制造假相关 | 相邻L3有50字重叠 → 向量高度相似 → 两块同时命中 → 虚假触发升级 |
+| 升级后大量重复段落 | 两个相邻L2都升级，内容高度重叠，拼接后给LLM噪声文本 |
+| overlap误用场景 | overlap是平铺分块的补丁（弥补边界截断），层级结构里父块已包含完整内容，overlap无意义 |
+
+**对标参考（LlamaIndex官方设计）**
+```
+2048 → 512 → 128，overlap=20
+4x层级比例 → 每个L2约4个L3子块
+threshold=2 → 命中至少50%，语义上真的说明整段相关
+```
+
+**思考过程**
+
+1. **比例决定threshold的含义**：2x比例时 threshold=2 = "命中所有子块"，毫无判别力；4x比例时 threshold=2 = "命中50%子块"，才是有意义的门槛
+2. **overlap在层级结构里是错的**：层级关系本身保存了边界信息（父块包含完整子块），overlap只会制造重叠内容 → 假相关 → 雪球噪声
+3. **L3边界截断怎么办**：不加overlap，改用**标点感知语义切分**——在目标切割点前~13字内找最近的句末标点（。！？；），优雅解决边界截断而不引入重复
+
+**最终方案**
+
+```
+L1 = 1024字，overlap = 0（章节级，不参与向量检索）
+L2 =  256字，overlap = 0（段落级，不参与向量检索）
+L3 =   64字，overlap = 0，使用标点感知语义切分（leaf，存Milvus）
+threshold = 2（含义：命中 ≥ 50% 子块才升级）
+```
+
+---
+
+### Java: HierarchicalDocumentSplitter（最终方案）
 ```java
 public class HierarchicalDocumentSplitter {
-    // L1: 1200 tokens, overlap 200
-    // L2: 600 tokens, overlap 100
-    // L3: 300 tokens, overlap 50
+    // L1=1024, L2=256, L3=64, 全部 overlap=0, 4x 层级比例
     public HierarchyResult split(Document source) {
         String sourceId = UUID.randomUUID().toString();
-        List<Document> l1Chunks = splitLevel(source.getContent(), 1200, 200, sourceId, 1);
+        List<Document> l1Chunks = splitHard(source.getText(), 1024, sourceId, 1);
         List<Document> l2Chunks = new ArrayList<>();
         List<Document> l3Chunks = new ArrayList<>();
 
         for (Document l1 : l1Chunks) {
-            List<Document> l2s = splitLevel(l1.getContent(), 600, 100, l1.getId(), 2);
+            List<Document> l2s = splitHard(l1.getText(), 256, l1.getId(), 2);
             l2Chunks.addAll(l2s);
             for (Document l2 : l2s) {
-                List<Document> l3s = splitLevel(l2.getContent(), 300, 50, l2.getId(), 3);
+                // L3 用标点感知切分，目标64字，±13字浮动
+                List<Document> l3s = splitSemantic(l2.getText(), 64, l2.getId(), 3);
                 l3Chunks.addAll(l3s);
             }
         }
         return new HierarchyResult(l1Chunks, l2Chunks, l3Chunks);
     }
-}
-```
 
-### Java: Auto-merge
-```java
-public List<Document> mergeToParent(List<Document> leafChunks,
-        ParentChunkStore store, int threshold) {
-    // Group by parent_id
-    Map<String, List<Document>> byParent = leafChunks.stream()
-        .collect(Collectors.groupingBy(d -> d.getMetadata().get("parent_id").toString()));
-
-    List<Document> result = new ArrayList<>();
-    for (var entry : byParent.entrySet()) {
-        String parentId = entry.getKey();
-        List<Document> siblings = entry.getValue();
-        Optional<Document> parent = store.get(parentId);
-        if (siblings.size() >= threshold && parent.isPresent()) {
-            result.add(parent.get());  // replace with parent
-        } else {
-            result.addAll(siblings);   // keep original leaves
+    // L3专用：往前找标点，避免关键词截断
+    private List<String> splitSemantic(String text, int target) {
+        Set<Character> sentenceEnd = Set.of('。', '！', '？', '；', '\n');
+        Set<Character> pauseMark  = Set.of('，', '、', '：');
+        List<String> chunks = new ArrayList<>();
+        int start = 0;
+        while (start < text.length()) {
+            int end = Math.min(start + target, text.length());
+            if (end == text.length()) { chunks.add(text.substring(start)); break; }
+            int lookback = target / 5; // ~13字
+            int cutAt = -1;
+            for (int i = end; i >= end - lookback && cutAt == -1; i--)
+                if (sentenceEnd.contains(text.charAt(i))) cutAt = i + 1;
+            for (int i = end; i >= end - lookback && cutAt == -1; i--)
+                if (pauseMark.contains(text.charAt(i))) cutAt = i + 1;
+            if (cutAt == -1) cutAt = end;
+            chunks.add(text.substring(start, cutAt));
+            start = cutAt;
         }
+        return chunks;
     }
-    // deduplicate by id
-    return result.stream().distinct().toList();
 }
 ```
+
+### Java: Auto-merge（两轮迭代 + 去重）
+```java
+public List<Document> autoMerge(List<Document> leafChunks,
+        ParentChunkStore store, int threshold) {
+    List<Document> current = leafChunks;
+    // 两轮：L3→L2, L2→L1
+    for (int round = 0; round < 2; round++) {
+        current = mergeSingleLevel(current, store, threshold);
+    }
+    // 按 chunk_id 去重
+    return current.stream()
+        .collect(Collectors.toMap(
+            d -> d.getMetadata().get("chunk_id").toString(),
+            d -> d, (a, b) -> a))
+        .values().stream().toList();
+}
+
+private List<Document> mergeSingleLevel(List<Document> chunks,
+        ParentChunkStore store, int threshold) {
+    // 无 parent_id 的（L1）直接保留
+    Map<Boolean, List<Document>> split = chunks.stream()
+        .collect(Collectors.partitioningBy(
+            d -> d.getMetadata().containsKey("parent_id")));
+
+    List<Document> result = new ArrayList<>(split.get(false));
+    split.get(true).stream()
+        .collect(Collectors.groupingBy(d -> d.getMetadata().get("parent_id").toString()))
+        .forEach((parentId, siblings) -> {
+            Optional<Document> parent = store.get(parentId);
+            if (siblings.size() >= threshold && parent.isPresent())
+                result.add(parent.get());   // 升级
+            else
+                result.addAll(siblings);    // 保留原层
+        });
+    return result;
+}
 
 ---
 
